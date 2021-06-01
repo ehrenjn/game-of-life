@@ -10,7 +10,6 @@ Could use curses or something to make the printing way nicer
 
 use std::{fmt, iter, thread, time};
 use std::collections::{HashSet, HashMap};
-use std::process::Command;
 use rand::{self, Rng};
 
 
@@ -51,6 +50,67 @@ impl Board {
             self.occupied_cells.insert(random_cell);
         }
     }
+
+    fn update_cells(&mut self) {
+
+        // first count how many neighbours each cell has (ignoring all the cells that we know have 0 neighbours)
+        let mut neighbour_counts: HashMap<Point, u8> = HashMap::new();
+        for cell in &self.occupied_cells {
+
+            let on_top_edge = cell.y == 0;
+            let on_right_edge = cell.x == (self.width - 1);
+            let on_bottom_edge = cell.y == (self.height - 1);
+            let on_left_edge = cell.x == 0;
+
+            // find all valid neighbours
+            let mut neighbours: Vec<Point> = Vec::with_capacity(0);
+            if !on_top_edge {
+                neighbours.push(Point{x: cell.x, y: cell.y - 1});
+            }
+            if !on_right_edge {
+                neighbours.push(Point{x: cell.x + 1, y: cell.y});
+            }
+            if !on_bottom_edge {
+                neighbours.push(Point{x: cell.x, y: cell.y + 1});
+            }
+            if !on_left_edge {
+                neighbours.push(Point{x: cell.x - 1, y: cell.y});
+            }
+            if !on_top_edge && !on_left_edge {
+                neighbours.push(Point{x: cell.x - 1, y: cell.y - 1});
+            }
+            if !on_top_edge && !on_right_edge {
+                neighbours.push(Point{x: cell.x + 1, y: cell.y - 1});
+            }
+            if !on_bottom_edge && !on_left_edge {
+                neighbours.push(Point{x: cell.x - 1, y: cell.y + 1});
+            }
+            if !on_bottom_edge && !on_right_edge {
+                neighbours.push(Point{x: cell.x + 1, y: cell.y + 1});
+            }
+
+            // increment each neighbouring cell's num_neighbours count by 1
+            for neighbour_cell in neighbours.into_iter() {
+                let num_neighbours = *neighbour_counts // dereference so that I don't have a borrowed value (could dereference it later but compiler will complain if I mutate neighbour_counts while having an immutable borrow of it out)
+                    .get(&neighbour_cell)
+                    .unwrap_or(&0); // count begins at 0 neighbours by default
+                neighbour_counts.insert(neighbour_cell, num_neighbours + 1);
+            }
+        }
+
+        // generate new occupied cells using neighbour counts
+        let mut new_occupied_cells = HashSet::new();
+        for (cell, neighbours) in neighbour_counts {
+            let is_alive = self.occupied_cells.contains(&cell);
+            if is_alive && (neighbours == 2 || neighbours == 3) {
+                new_occupied_cells.insert(cell);
+            }
+            else if !is_alive && neighbours == 3 {
+                new_occupied_cells.insert(cell);
+            }
+        }
+        self.occupied_cells = new_occupied_cells;
+    }
 }
 
 
@@ -80,80 +140,13 @@ impl fmt::Display for Board {
 }
 
 
-fn play(mut board: Board) {
-    loop {
-        let mut neighbour_counts: HashMap<Point, u8> = HashMap::new();
-        for cell in &board.occupied_cells {
-
-            let on_top_edge = cell.y == 0;
-            let on_right_edge = cell.x == (board.width - 1);
-            let on_bottom_edge = cell.y == (board.height - 1);
-            let on_left_edge = cell.x == 0;
-
-            let mut neighbours: Vec<Point> = Vec::with_capacity(0);
-            if !on_top_edge {
-                neighbours.push(Point{x: cell.x, y: cell.y - 1});
-            }
-            if !on_right_edge {
-                neighbours.push(Point{x: cell.x + 1, y: cell.y});
-            }
-            if !on_bottom_edge {
-                neighbours.push(Point{x: cell.x, y: cell.y + 1});
-            }
-            if !on_left_edge {
-                neighbours.push(Point{x: cell.x - 1, y: cell.y});
-            }
-            if !on_top_edge && !on_left_edge {
-                neighbours.push(Point{x: cell.x - 1, y: cell.y - 1});
-            }
-            if !on_top_edge && !on_right_edge {
-                neighbours.push(Point{x: cell.x + 1, y: cell.y - 1});
-            }
-            if !on_bottom_edge && !on_left_edge {
-                neighbours.push(Point{x: cell.x - 1, y: cell.y + 1});
-            }
-            if !on_bottom_edge && !on_right_edge {
-                neighbours.push(Point{x: cell.x + 1, y: cell.y + 1});
-            }
-
-            for neighbour_cell in neighbours.into_iter() {
-                let num_neighbours = *neighbour_counts // dereference so that I don't have a borrowed value (could dereference it later but compiler will complain if I mutate neighbour_counts while having an immutable borrow of it out)
-                    .get(&neighbour_cell)
-                    .unwrap_or(&0); // count begins at 0 neighbours by default
-                neighbour_counts.insert(neighbour_cell, num_neighbours + 1);
-            }
-        }
-
-        let mut new_occupied_cells = HashSet::new();
-        for (cell, neighbours) in neighbour_counts {
-            let is_alive = board.occupied_cells.contains(&cell);
-            if is_alive && (neighbours == 2 || neighbours == 3) {
-                new_occupied_cells.insert(cell);
-            }
-            else if !is_alive && neighbours == 3 {
-                new_occupied_cells.insert(cell);
-            }
-        }
-        board.occupied_cells = new_occupied_cells;
-        
-        /*
-        // clear the screen and print the board
-        #[allow(unused_must_use)] { // we don't care about the output so ignore that warning
-            Command::new("clear").spawn(); 
-        }
-        thread::sleep(time::Duration::from_millis(10)); // !!! have to sleep for 10 ms or could be called before print (race condition)
-        */
-        println!("\n\n\n===\n{}", board);
-
-        // sleep for duration of one frame
-        thread::sleep(time::Duration::from_millis(20));
-    }
-}
-
-
 fn main() {
-    println!("Hello, world!");
     let mut board = Board::new(190, 44);
     board.init_randomly();
-    play(board);
+
+    loop {
+        board.update_cells();
+        println!("\n\n\n===\n{}", board);
+        thread::sleep(time::Duration::from_millis(20)); // sleep for duration of one frame
+    }
 }
