@@ -1,9 +1,10 @@
 /*
+Possible todos:
 Add cursor movement and placing cells
 Add commandline args
     framerate
     board size
-Maybe 2 rectangles side by side should be used to make a single square pixel(▒▒)
+Maybe 2 rectangles side by side should be used to make a single square pixel(▒▒ or ◗◖)
 Dont hardcode all the numbers
 Might make sense to only draw the first n-2 rows and columns or something
     this way things would move off the screen and die more naturally
@@ -25,6 +26,17 @@ use std::io::{
     self,
     Write, // for RawTerminal::write_fmt (RawTerminal's impl for Write trait) (called by write!)
 };
+
+
+
+const INSTRUCTIONS: &str = "\
+    ║ spacebar: play/pause      ║\r\n\
+    ║ f:        forward 1 frame ║\r\n\
+    ║ r:        randomize       ║\r\n\
+    ║ q:        quit            ║\r\n\
+    ╚═══════════════════════════╝\
+";
+const INSTRUCTIONS_WIDTH: u16 = 29;
 
 
 // derive() will automatically derive all the traits needed to be hashable by autogenering an impl
@@ -145,7 +157,7 @@ impl fmt::Display for Board {
 
         // add filled cells
         for point in &self.occupied_cells {
-            board_string[point.y][point.x+1] = '■'; // x+1 because the first character of every row is a '║'
+            board_string[point.y][point.x+1] = '⬤';//'◯';//'◉';//'▨'; // x+1 because the first character of every row is a '║'
         }
 
         // convert vector to string and print
@@ -155,23 +167,9 @@ impl fmt::Display for Board {
 }
 
 
-const INSTRUCTIONS: &str = "\
-    ║ spacebar: play/pause      ║\r\n\
-    ║ f:        forward 1 frame ║\r\n\
-    ║ r:        randomize       ║\r\n\
-    ║ q:        quit            ║\r\n\
-    ╚═══════════════════════════╝\
-";
-const INSTRUCTIONS_WIDTH: u16 = 29;
-const INSTRUCTIONS_HEIGHT: u16 = 5;
-
-
 // prints parts of screen that wont change
 #[allow(unused_must_use)] // so I dont have to type .ok() after every write! call
 fn print_static_text<W: Write>(stdout: &mut W, board: &Board) {
-
-    // hide cursor
-    write!(stdout, "{}", termion::cursor::Hide);
 
     // print top and bottom of board
     write!(stdout, "{}", termion::clear::All); // .ok() to convert Result into an Option and throw away the possible Error (because not handling the error is a compiler warning)
@@ -197,18 +195,7 @@ fn print_static_text<W: Write>(stdout: &mut W, board: &Board) {
 }
 
 
-fn main() {
-    let mut board = Board::new(150, 30);
-    board.init_randomly();
-
-    // enter raw terminal mode
-    let mut stdout = io::stdout().into_raw_mode().unwrap();
-
-    // create object to read keyboard inputs from (use async_stdin instead of io::stdin so that calls to key_input.next are nonblocking)
-    let mut key_input = termion::async_stdin().keys();
-
-    print_static_text(&mut stdout, &board);
-
+fn play_game<W: io::Write, R: io::Read>(board: &mut Board, key_input: &mut termion::input::Keys<R>, stdout: &mut W) {
     let mut paused = false;
     let mut game_running = true;
 
@@ -246,19 +233,34 @@ fn main() {
         if board_updated {
             write!(stdout, "{}{}", termion::cursor::Goto(1, 2), board).ok();
             stdout.flush().ok(); // ensure all writes are printed to the screen
-            thread::sleep(time::Duration::from_millis(30)); // sleep for duration of one frame
         }
-    }
 
-    // exit nicely
-    let screen_bottom = termion::cursor::Goto(
-        1,
-        board.height as u16 + INSTRUCTIONS_HEIGHT + 3
+        // sleep for duration of one frame
+        thread::sleep(time::Duration::from_millis(30));
+    }
+}
+
+
+fn main() {
+    let mut board = Board::new(120, 30);
+    board.init_randomly();
+
+    // switch to alternate screen buffer and enter raw mode
+    let mut stdout = termion::screen::AlternateScreen::from(
+        io::stdout().into_raw_mode().unwrap() // into_raw_mode enters raw mode (don't echo every key we press, don't move the cursor when we press keys, etc)
     );
-    write!(
-        stdout, "{}{}", 
-        termion::cursor::Show, // make cursor visable again
-        screen_bottom
-    ).ok();
+
+    // create object to read keyboard inputs from (use async_stdin instead of io::stdin so that calls to key_input.next are nonblocking)
+    let mut key_input = termion::async_stdin().keys();
+
+    // hide cursor
+    write!(stdout, "{}", termion::cursor::Hide).ok();
+
+    print_static_text(&mut stdout, &board);
+
+    play_game(&mut board, &mut key_input, &mut stdout);
+
+    // make cursor visable again
+    write!(stdout, "{}", termion::cursor::Show).ok();
     stdout.flush().ok();
 }
