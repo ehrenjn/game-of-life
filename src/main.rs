@@ -6,12 +6,6 @@ Add command line args
 Make default board size based on terminal size
 Maybe 2 rectangles side by side should be used to make a single square pixel(▒▒ or ◗◖)
 Dont hardcode all the numbers
-Might make sense to only draw the first n-2 rows and columns or something
-    this way things would move off the screen and die more naturally
-    would need to think about it more (not sure if it would actually work the way I imagine... cells that wander off might come back)
-Could use curses or something to make the printing way nicer
-    could maybe have user input then too
-    if you do that you should add pause/playing too
 */
 
 use std::{fmt, iter, thread, time};
