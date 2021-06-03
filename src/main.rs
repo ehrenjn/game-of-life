@@ -1,9 +1,9 @@
 /*
 Possible todos:
-Add cursor movement and placing cells
-Add commandline args
+Add command line args
     framerate
     board size
+Make default board size based on terminal size
 Maybe 2 rectangles side by side should be used to make a single square pixel(▒▒ or ◗◖)
 Dont hardcode all the numbers
 Might make sense to only draw the first n-2 rows and columns or something
@@ -30,14 +30,14 @@ use std::io::{
 
 
 const INSTRUCTIONS: &str = "\
-    ║ spacebar:   play/pause       ║\r\n\
-    ║ arrow keys: move cursor      ║\r\n\
-    ║ c:          clear            ║\r\n\
-    ║ a:          create/kill cell ║\r\n\
-    ║ f:          advance 1 frame  ║\r\n\
-    ║ r:          randomize        ║\r\n\
-    ║ h:          show/hide cursor ║\r\n\
-    ║ q:          quit             ║\r\n\
+    ║ Spacebar:   Play/Pause       ║\r\n\
+    ║ Arrow keys: Move cursor      ║\r\n\
+    ║ c:          Clear            ║\r\n\
+    ║ a:          Create/Kill cell ║\r\n\
+    ║ f:          Advance 1 frame  ║\r\n\
+    ║ r:          Randomize        ║\r\n\
+    ║ h:          Show/Hide cursor ║\r\n\
+    ║ q:          Quit             ║\r\n\
     ╚══════════════════════════════╝\
 ";
 const INSTRUCTIONS_WIDTH: u16 = 32;
