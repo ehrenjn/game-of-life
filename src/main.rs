@@ -3,12 +3,12 @@ Possible todos:
 Add command line args
     framerate
     board size
-Make default board size based on terminal size
+Try to make it work properly on rpi terminal
 Maybe 2 rectangles side by side should be used to make a single square pixel(▒▒ or ◗◖)
 Dont hardcode all the numbers
 */
 
-use std::{fmt, iter, thread, time};
+use std::{fmt, iter, thread, time, process};
 use std::collections::{HashSet, HashMap};
 use rand::Rng;
 use termion::{
@@ -35,6 +35,8 @@ const INSTRUCTIONS: &str = "\
     ╚══════════════════════════════╝\
 ";
 const INSTRUCTIONS_WIDTH: u16 = 32;
+const INSTRUCTIONS_HEIGHT: u16 = 9;
+
 
 
 // derive() will automatically derive all the traits needed to be hashable by autogenering an impl
@@ -291,8 +293,26 @@ fn play_game<W: io::Write, R: io::Read>(board: &mut Board, key_input: &mut termi
 }
 
 
+fn default_board_dimensions() -> (u16, u16) {
+    let (terminal_width, terminal_height) = termion::terminal_size().unwrap();
+    let min_board_height = 1;
+    let min_board_width = INSTRUCTIONS_WIDTH - 2; // -2 because theres 2 borders on either side of the instructions
+    let max_board_width = terminal_width - 2; // again, -2 because borders
+    let max_board_height = terminal_height - INSTRUCTIONS_HEIGHT - 2;
+    if max_board_height < min_board_height || max_board_width < min_board_width {
+        println!("your terminal is too small to play :(");
+        process::exit(1);
+    }
+    return (max_board_width, max_board_height);
+}
+
+
 fn main() {
-    let mut board = Board::new(120, 30);
+    let (defualt_board_width, default_board_height) = default_board_dimensions();
+    let mut board = Board::new(
+        defualt_board_width as u32,//(max_board_width as f32 * 0.7) as u32, 
+        default_board_height as u32//(max_board_height as f32 * 0.8) as u32
+    );
     board.init_randomly();
 
     // switch to alternate screen buffer and enter raw mode
