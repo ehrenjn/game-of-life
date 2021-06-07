@@ -1,15 +1,12 @@
 /*
 Possible todos:
-Add command line args
-    framerate
-    board size
+Add command line args for board size
 Try to make it work properly on rpi terminal
 Maybe 2 rectangles side by side should be used to make a single square pixel(▒▒ or ◗◖)
 Dont hardcode all the numbers
 Might be more efficient to only print the cell diff every frame instead of the whole board
     basically if a cell doesn't change from frame to frame we don't draw it
     depends on how efficient termion::Gotos are
-Refactor play_game to pass a FrameState struct or something to a handle_input that with process the key presses and return an updated FrameState
 */
 
 use std::{iter, thread, time, process};
