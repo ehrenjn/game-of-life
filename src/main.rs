@@ -6,15 +6,20 @@ Add command line args
 Try to make it work properly on rpi terminal
 Maybe 2 rectangles side by side should be used to make a single square pixel(▒▒ or ◗◖)
 Dont hardcode all the numbers
+Might be more efficient to only print the cell diff every frame instead of the whole board
+    basically if a cell doesn't change from frame to frame we don't draw it
+    depends on how efficient termion::Gotos are
+Refactor play_game to pass a FrameState struct or something to a handle_input that with process the key presses and return an updated FrameState
 */
 
-use std::{fmt, iter, thread, time, process};
+use std::{iter, thread, time, process};
 use std::collections::{HashSet, HashMap};
 use rand::Rng;
 use termion::{
     self, 
     input::TermRead, // for Stdin::keys method
     raw::IntoRawMode, // for Stdout::into_raw_mode method
+    event::Key
 };
 use std::io::{
     self,
@@ -26,16 +31,22 @@ use std::io::{
 const INSTRUCTIONS: &str = "\
     ║ Spacebar:   Play/Pause       ║\r\n\
     ║ Arrow keys: Move cursor      ║\r\n\
-    ║ c:          Clear            ║\r\n\
-    ║ a:          Create/Kill cell ║\r\n\
-    ║ f:          Advance 1 frame  ║\r\n\
-    ║ r:          Randomize        ║\r\n\
-    ║ h:          Show/Hide cursor ║\r\n\
-    ║ q:          Quit             ║\r\n\
-    ╚══════════════════════════════╝\
-";
+    ║ C:          Clear            ║\r\n\
+    ║ A:          Create/Kill cell ║\r\n\
+    ║ F:          Advance 1 frame  ║\r\n\
+    ║ R:          Randomize        ║\r\n\
+    ║ H:          Show/Hide cursor ║\r\n\
+    ║ U:          Toggle unicode   ║\r\n\
+    ║ -/+:        Adjust framerate ║\r\n\
+    ║ Q:          Quit             ║\r\n\
+    ╚══════════════════════════════╝\r\n\
+                                    \
+"; // extra empty line at end needed to print frame delay
 const INSTRUCTIONS_WIDTH: u16 = 32;
-const INSTRUCTIONS_HEIGHT: u16 = 9;
+const INSTRUCTIONS_HEIGHT: u16 = 12;
+
+const CELL_CHAR_UNICODE: char = '⬤';//'◯';//'◉';//'▨';
+const CELL_CHAR_ASCII: char = '#';
 
 
 
@@ -152,29 +163,25 @@ impl Board {
 }
 
 
-impl fmt::Display for Board {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+fn board_to_string(board: &Board, cell_char: char) -> String {
 
-        // build empty board string
-        let mut board_string = Vec::new();
-        for _ in 0..self.height {
-            let mut cell_row: Vec<char> = vec!['║'];
-            cell_row.extend(iter::repeat(' ').take(self.width as usize));
-            cell_row.push('║');
-            cell_row.push('\r'); // in raw mode terminals a newline just moves the cursor down, we need a carriage return so that the cursor also moves to the beginning of the line
-            cell_row.push('\n');
-            board_string.push(cell_row);
-        }
-
-        // add filled cells
-        for point in &self.occupied_cells {
-            board_string[point.y as usize][point.x as usize + 1] = '⬤';//'◯';//'◉';//'▨'; // x+1 because the first character of every row is a '║'
-        }
-
-        // convert vector to string and print
-        let text: String = board_string.iter().flatten().collect();
-        return write!(formatter, "{}", text);
+    // build empty board string
+    let mut board_string = Vec::new();
+    for _ in 0..board.height {
+        let mut cell_row: Vec<char> = vec!['║'];
+        cell_row.extend(iter::repeat(' ').take(board.width as usize));
+        cell_row.push('║');
+        cell_row.push('\r'); // in raw mode terminals a newline just moves the cursor down, we need a carriage return so that the cursor also moves to the beginning of the line
+        cell_row.push('\n');
+        board_string.push(cell_row);
     }
+
+    // add filled cells
+    for point in &board.occupied_cells {
+        board_string[point.y as usize][point.x as usize + 1] = cell_char; // x+1 because the first character of every row is a '║'
+    }
+
+    return board_string.iter().flatten().collect();
 }
 
 
@@ -208,87 +215,151 @@ fn print_static_text<W: Write>(stdout: &mut W, board: &Board) {
 }
 
 
+struct GameState {
+    paused: bool,
+    game_running: bool,
+    cursor_position: Point,
+    cursor_visible: bool,
+    cell_char: char,
+    frame_delay: i16, // signed so we can check when it goes below 0 more easily
+    is_first_frame: bool, // for any setup that only occurs on the first frame
+}
+
+
+// stored seperately from GameState because these variables must be reset to defaults (false) every frame
+struct FrameState {
+    board_updated: bool,
+    frame_delay_updated: bool,
+}
+
+
+fn handle_key_press(key: Key, board: &mut Board, game_state: &mut GameState, frame_state: &mut FrameState) {
+    match key {
+        Key::Char('q') | Key::Char('Q') => game_state.game_running = false,
+        Key::Char(' ') => game_state.paused = !game_state.paused,
+        Key::Char('r') | Key::Char('R') => { // initialize randomly
+            board.init_randomly(); 
+            frame_state.board_updated = true;
+        },
+        Key::Char('c') | Key::Char('C') => { // clear board
+            board.occupied_cells = HashSet::new();
+            frame_state.board_updated = true;
+        }
+        Key::Char('f') | Key::Char('F') => { // move forward one frame
+            if game_state.paused {
+                board.update_cells();
+                frame_state.board_updated = true;
+            }
+        }
+        Key::Right => game_state.cursor_position.x += 1,
+        Key::Down => game_state.cursor_position.y += 1,
+        Key::Left => game_state.cursor_position.x -= 1,
+        Key::Up => game_state.cursor_position.y -= 1,
+        Key::Char('h') | Key::Char('H') => { // hide cursor
+            game_state.cursor_visible = !game_state.cursor_visible;
+        }
+        Key::Char('a') | Key::Char('A') => { // create/kill a cell
+            if board.occupied_cells.contains(&game_state.cursor_position) {
+                board.occupied_cells.remove(&game_state.cursor_position);
+            } else {
+                board.occupied_cells.insert(game_state.cursor_position.clone());
+            }
+            frame_state.board_updated = true;
+        }
+        Key::Char('u') | Key::Char('U') => {
+            if game_state.cell_char == CELL_CHAR_UNICODE {
+                game_state.cell_char = CELL_CHAR_ASCII;
+            } else {
+                game_state.cell_char = CELL_CHAR_UNICODE;
+            }
+            frame_state.board_updated = true;
+        }
+        Key::Char('-') | Key::Char('_') | Key::Char('=') | Key::Char('+') => {
+            match key {
+                Key::Char('-') | Key::Char('_') => game_state.frame_delay -= 1,
+                _ => game_state.frame_delay += 1
+            }
+            if game_state.frame_delay < 0 { game_state.frame_delay = 0; }
+            if game_state.frame_delay > 100 { game_state.frame_delay = 100; }
+            frame_state.frame_delay_updated = true;
+        }
+        _ => {}
+    };
+}
+
+
 fn play_game<W: io::Write, R: io::Read>(board: &mut Board, key_input: &mut termion::input::Keys<R>, stdout: &mut W) {
-    let mut paused = false;
-    let mut game_running = true;
-    let mut cursor_position = Point{x:0, y:0}; // we will consider the top left of the board to be 0,0 to conform with board.occupied_cells Points
-    let mut cursor_visible = true;
+    let mut game_state = GameState {
+        paused: false,
+        game_running: true,
+        cursor_position: Point{x:0, y:0}, // we will consider the top left of the board to be 0,0 to conform with board.occupied_cells Points
+        cursor_visible: true,
+        cell_char: CELL_CHAR_UNICODE,
+        frame_delay: 30,
+        is_first_frame: true
+    };
 
-    while game_running {
+    while game_state.game_running {
 
-        let mut board_updated = false;
+        let mut frame_state = FrameState {
+            board_updated: false,
+            frame_delay_updated: false
+        };
 
         // update_cells before we handle key presses so that if a keypress causes a cell to be born or die we will see that effect directly on the next frame (if we were to call update_cells after handling input (but before printing the frame) then we would never see the direct result of the user input because update_cells would be called because the user input has a chance to be printed to the screen)
         // the downside of doing it this way is that that a user keypress actually effects the state of the next cell update, and not the current cell update (the one that the user is currently looking at), although this is only noticable at low framerates
-        if !paused {
+        if !game_state.paused {
             board.update_cells();
-            board_updated = true;
+            frame_state.board_updated = true;
         }
 
         // handle key presses
         // this only handles one key per frame but key_input has a buffer so if more than one key is pressed in one frame duration then each key press will still get handled on subsequent frames 
         match key_input.next() {
             Some(input) => {
-                match input.unwrap() {
-                    termion::event::Key::Char('q') => game_running = false,
-                    termion::event::Key::Char(' ') => paused = !paused,
-                    termion::event::Key::Char('r') => { // initialize randomly
-                        board.init_randomly(); 
-                        board_updated = true;
-                    },
-                    termion::event::Key::Char('c') => { // clear board
-                        board.occupied_cells = HashSet::new();
-                        board_updated = true;
-                    }
-                    termion::event::Key::Char('f') => { // move forward one frame
-                        if paused {
-                            board.update_cells();
-                            board_updated = true;
-                        }
-                    }
-                    termion::event::Key::Right => cursor_position.x += 1,
-                    termion::event::Key::Down => cursor_position.y += 1,
-                    termion::event::Key::Left => cursor_position.x -= 1,
-                    termion::event::Key::Up => cursor_position.y -= 1,
-                    termion::event::Key::Char('h') => { // hide cursor
-                        if cursor_visible {
-                            write!(stdout, "{}", termion::cursor::Hide).ok();
-                        } else {
-                            write!(stdout, "{}", termion::cursor::Show).ok();
-                        }
-                        cursor_visible = !cursor_visible;
-                    }
-                    termion::event::Key::Char('a') => { // create/kill a cell
-                        if board.occupied_cells.contains(&cursor_position) {
-                            board.occupied_cells.remove(&cursor_position);
-                        } else {
-                            board.occupied_cells.insert(cursor_position.clone());
-                        }
-                        board_updated = true;
-                    }
-                    _ => {}
-                }
+                handle_key_press(input.unwrap(), board, &mut game_state, &mut frame_state); // kinda yucky that handle_key_press can mutate any of its input, would be more clear if it returned a BoardState and FrameState but then rust gets angry about borrows and moves and fixing it ends up being even worse than this
             },
             None => {} // a key wasn't pressed
         }
 
         // print board
-        if board_updated {
-            write!(stdout, "{}{}", termion::cursor::Goto(1, 2), board).ok();
+        if frame_state.board_updated {
+            let board_string = board_to_string(board, game_state.cell_char);
+            write!(stdout, "{}{}", termion::cursor::Goto(1, 2), board_string).ok();
+        }
+
+        // write frame delay
+        if frame_state.frame_delay_updated || game_state.is_first_frame {
+            let last_line = board.height as u16 + INSTRUCTIONS_HEIGHT + 2;
+            write!(
+                stdout, 
+                "{}Sleep per frame: {} ms     ", // extra spaces to eliminate old trailing zeros
+                termion::cursor::Goto(0, last_line),
+                game_state.frame_delay
+            ).ok();
         }
 
         // ensure cursor is at correct location
-        cursor_position.bound(
+        game_state.cursor_position.bound(
             0, 0, 
             board.width as i16 - 1, board.height as i16 - 1
         );
         write!(stdout, "{}", termion::cursor::Goto(
-            cursor_position.x as u16 + 2, 
-            cursor_position.y as u16 + 2
+            game_state.cursor_position.x as u16 + 2, 
+            game_state.cursor_position.y as u16 + 2
         )).ok();
 
+        // set cursor visibility
+        if game_state.cursor_visible {
+            write!(stdout, "{}", termion::cursor::Show).ok();
+        } else {
+            write!(stdout, "{}", termion::cursor::Hide).ok();
+        }
+
+        game_state.is_first_frame = false;
+
         stdout.flush().ok(); // ensure all writes are printed to the screen
-        thread::sleep(time::Duration::from_millis(30)); // sleep for duration of one frame
+        thread::sleep(time::Duration::from_millis(game_state.frame_delay as u64)); // sleep for duration of one frame
     }
 }
 
