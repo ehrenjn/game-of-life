@@ -1,7 +1,6 @@
 /*
 Possible todos:
 Add command line args for board size
-Try to make it work properly on rpi terminal
 Maybe 2 rectangles side by side should be used to make a single square pixel(▒▒ or ◗◖)
 Dont hardcode all the numbers
 Might be more efficient to only print the cell diff every frame instead of the whole board
@@ -44,6 +43,9 @@ const INSTRUCTIONS_HEIGHT: u16 = 12;
 
 const CELL_CHAR_UNICODE: char = '⬤';//'◯';//'◉';//'▨';
 const CELL_CHAR_ASCII: char = '#';
+
+const MIN_FRAME_DELAY: i16 = 1; // can't go to 0 ms or else moving the cursor while paused gets really glitchy (almost certainly just the terminal's fault and not mine)
+const MAX_FRAME_DELAY: i16 = 100; // if we go much higher than 100 ms it gets hard to lower the framerate because key inputs are received so slowly
 
 
 
@@ -276,8 +278,12 @@ fn handle_key_press(key: Key, board: &mut Board, game_state: &mut GameState, fra
                 Key::Char('-') | Key::Char('_') => game_state.frame_delay -= 1,
                 _ => game_state.frame_delay += 1
             }
-            if game_state.frame_delay < 0 { game_state.frame_delay = 0; }
-            if game_state.frame_delay > 100 { game_state.frame_delay = 100; }
+            if game_state.frame_delay < MIN_FRAME_DELAY { 
+                game_state.frame_delay = MIN_FRAME_DELAY; 
+            }
+            if game_state.frame_delay > MAX_FRAME_DELAY { 
+                game_state.frame_delay = MAX_FRAME_DELAY; 
+            }
             frame_state.frame_delay_updated = true;
         }
         _ => {}
@@ -395,7 +401,12 @@ fn main() {
 
     play_game(&mut board, &mut key_input, &mut stdout);
 
-    // make sure cursor is visable
-    write!(stdout, "{}", termion::cursor::Show).ok();
+    // reset terminal to exit
+    write!(stdout, 
+        "{}{}{}", 
+        termion::cursor::Show, // make cursor visible again
+        termion::cursor::Goto(0,0), // move cursor back to a reasonable place (useful because some terminals won't exit the alternate screen buffer properly (maybe they only have 1 buffer?))
+        termion::clear::All // also for screens that don't exit the alternate screen properly
+    ).ok();
     stdout.flush().ok();
 }
