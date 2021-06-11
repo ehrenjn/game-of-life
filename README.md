@@ -1,7 +1,8 @@
 An interactive implementation of Conway's game of life for your terminal  
-There are many like it but this one is mine  
+Made with Rust and Termion
 
 ![](doc/example.gif)
+![](doc/example2.gif)
 
 <sub>(Made to learn the basics of Rust so the code might not be the best)</sub>  
 
