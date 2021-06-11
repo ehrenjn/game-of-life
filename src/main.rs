@@ -1,6 +1,5 @@
 /*
 Possible todos:
-Add command line args for board size
 Maybe 2 rectangles side by side should be used to make a single square pixel(▒▒ or ◗◖)
 Dont hardcode all the numbers
 Might be more efficient to only print the cell diff every frame instead of the whole board
@@ -8,7 +7,7 @@ Might be more efficient to only print the cell diff every frame instead of the w
     depends on how efficient termion::Gotos are
 */
 
-use std::{iter, thread, time, process};
+use std::{iter, thread, time, process, env};
 use std::collections::{HashSet, HashMap};
 use rand::Rng;
 use termion::{
@@ -286,7 +285,7 @@ fn handle_key_press(key: Key, board: &mut Board, game_state: &mut GameState, fra
             }
             frame_state.frame_delay_updated = true;
         }
-        _ => {}
+        _ => ()
     };
 }
 
@@ -322,7 +321,7 @@ fn play_game<W: io::Write, R: io::Read>(board: &mut Board, key_input: &mut termi
             Some(input) => {
                 handle_key_press(input.unwrap(), board, &mut game_state, &mut frame_state); // kinda yucky that handle_key_press can mutate any of its input, would be more clear if it returned a BoardState and FrameState but then rust gets angry about borrows and moves and fixing it ends up being even worse than this
             },
-            None => {} // a key wasn't pressed
+            None => () // a key wasn't pressed
         }
 
         // print board
@@ -381,11 +380,35 @@ fn default_board_dimensions() -> (u16, u16) {
 }
 
 
+fn parse_args(args: Vec<String>, mut board_width: u16, mut board_height: u16) -> (u16, u16) {
+    let mut last_arg: String = "".to_string(); // convert to String since string literals are of type &str
+    for arg in args {
+        match arg.parse::<u16>() {
+            Ok(val) => {
+                match last_arg.as_str() {
+                    "--height" => board_height = val,
+                    "--width" => board_width = val,
+                    _ => ()
+                }
+            }
+            Err(_) => ()
+        }
+        last_arg = arg;
+    }
+    return (board_width, board_height)
+}
+
+
 fn main() {
+    let args: Vec<String> = env::args().collect();
+
     let (defualt_board_width, default_board_height) = default_board_dimensions();
+    let (board_width, board_height) = parse_args(
+        args, defualt_board_width, default_board_height
+    );
     let mut board = Board::new(
-        defualt_board_width as u32,//(max_board_width as f32 * 0.7) as u32, 
-        default_board_height as u32//(max_board_height as f32 * 0.8) as u32
+        board_width as u32, 
+        board_height as u32
     );
     board.init_randomly();
 
