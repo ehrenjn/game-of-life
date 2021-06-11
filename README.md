@@ -2,9 +2,9 @@ An interactive implementation of Conway's game of life for your terminal
 Made with Rust and Termion
 
 ![](doc/example.gif)
-![](doc/example2.gif)
+<img src="doc/example2.gif" width=25% height=25%/>
 
-<sub>(Made to learn the basics of Rust so the code might not be the best)</sub>  
+<sub>(I made this to learn the basics of Rust so the code might not be the best)</sub>  
 
 ## Compiling and running
 ```cargo run --release```
